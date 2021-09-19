@@ -45,20 +45,15 @@ def cdelete(command_tokens):
     print('execute cdelete')
 
 def ch_folder(s5, command_tokens):
+    first_arg = ''
+    if len(command_tokens) > 1:
+        first_arg = command_tokens[1]
     try:
-       bucket, file_path = resolve_path(command_tokens[1])
-    except IndexError:
-        bucket, file_path = '', ''
-    try:
-        if bucket:
-            s5.set_current_bucket(bucket)
-        elif not file_path or file_path.startswith('/'):
-            s5.set_current_bucket(s5.root_bucket)
-        s5.set_current_folder(file_path)
+        to_bucket, to_folder = s5.resolve_path(first_arg)
+        s5.set_current_folder(to_bucket, to_folder)
     except Exception as ex:
         print(ex, file=sys.stderr)
-
-    
+  
 def cl_copy(command_tokens):
     print('execute cl_copy')
 
@@ -82,13 +77,12 @@ def lc_copy(s5, command_tokens):
     local_path, to_bucket, to_path = '', '', ''
     try:
         local_path = command_tokens[1]
-        to_bucket, to_path = resolve_path(command_tokens[2])
-        assert to_bucket is not None
+        to_bucket, to_path = s5.resolve_path(command_tokens[2])
     except:
         print('usage: lc_copy local_path bucket:s3_full_path', file=sys.stderr)
         return
     try:
-        s5.upload(local_path, to_bucket, to_path)
+        s5.upload(local_path, to_bucket, to_path.lstrip('/'))
     except FileNotFoundError:
         print(f'"{local_path}" could not be opened', file=sys.stderr)
     except:
@@ -96,18 +90,6 @@ def lc_copy(s5, command_tokens):
 
 def s3_list(command_tokens):
     print('execute list')
-
-# helper functions
-
-def resolve_path(path):
-    bucket, file_path = '', ''
-    if ':' in path:
-        bucket = path.split(':', 1)[0]
-        file_path = path.split(':', 1)[1]
-    else:
-        bucket = None
-        file_path = path
-    return (bucket, file_path)
     
     
 
