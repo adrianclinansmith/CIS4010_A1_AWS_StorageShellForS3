@@ -3,6 +3,7 @@ import botocore
 import subprocess
 import sys
 import s5_class
+from s5_exception import S5Exception
 
 ###############################################################################
 # Function Definitions
@@ -49,13 +50,23 @@ def ch_folder(s5, command_tokens):
     if len(command_tokens) > 1:
         first_arg = command_tokens[1]
     try:
-        to_bucket, to_folder = s5.resolve_path(first_arg)
-        s5.set_current_folder(to_bucket, to_folder)
+        s5.set_current_path(first_arg)
+    except S5Exception as ex:
+        print('s5 ex:', ex, file=sys.stderr)
     except Exception as ex:
-        print(ex, file=sys.stderr)
+        print('ex:', ex, file=sys.stderr)
   
 def cl_copy(command_tokens):
-    print('execute cl_copy')
+    try:
+        s5.cloud_to_local_copy(command_tokens[1], command_tokens[2])
+    except IndexError:
+        print('usage: cl_copy bucket:s3_path local_path', file=sys.stderr)
+    except FileNotFoundError:
+        print(f'"{command_tokens[2]}" could not be opened', file=sys.stderr)
+    except S5Exception as ex:
+        print(ex, file=sys.stderr)  
+    except:
+         print('Unsuccessful copy', file=sys.stderr)   
 
 def create_bucket(command_tokens):
     print('execute create_bucket')
@@ -64,7 +75,10 @@ def create_folder(command_tokens):
     print('execute create_folder')
 
 def cwf(s5):
-    print(s5.current_bucket + ':' + s5.current_folder)
+    if not s5.current_bucket:
+        print ('/')
+    else:
+        print(s5.current_bucket + ':' + s5.current_folder)
 
 def delete_bucket(command_tokens):
     print('execute delete_bucket')
@@ -74,19 +88,16 @@ def exit():
     sys.exit(0)
 
 def lc_copy(s5, command_tokens):
-    local_path, to_bucket, to_path = '', '', ''
     try:
-        local_path = command_tokens[1]
-        to_bucket, to_path = s5.resolve_path(command_tokens[2])
-    except:
-        print('usage: lc_copy local_path bucket:s3_full_path', file=sys.stderr)
-        return
-    try:
-        s5.upload(local_path, to_bucket, to_path.lstrip('/'))
+        s5.local_to_cloud_copy(command_tokens[1], command_tokens[2])
+    except IndexError:
+        print('usage: lc_copy local_path bucket:s3_path', file=sys.stderr)
     except FileNotFoundError:
-        print(f'"{local_path}" could not be opened', file=sys.stderr)
+        print(f'"{command_tokens[1]}" could not be opened', file=sys.stderr)
+    except S5Exception as ex:
+        print(ex, file=sys.stderr)  
     except:
-        print('Unsuccessful copy', file=sys.stderr)   
+         print('Unsuccessful copy', file=sys.stderr) 
 
 def s3_list(command_tokens):
     print('execute list')
@@ -123,7 +134,7 @@ except:
     sys.exit(1)
 
 
-s5 = s5_class.S5(s3_resource, 'cis4010-aclinans')
+s5 = s5_class.S5(s3_resource)
 
 print('You are now connected to your S3 storage')
 
