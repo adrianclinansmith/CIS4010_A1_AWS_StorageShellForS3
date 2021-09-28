@@ -4,6 +4,7 @@ import subprocess
 import sys
 import s5_class
 from s5_exception import S5Exception
+import os
 
 ###############################################################################
 # Function Definitions
@@ -22,9 +23,9 @@ def attempt_command(s5, string):
     elif tokens[0] == 'cl_copy':
         cl_copy(tokens)
     elif tokens[0] == 'create_bucket':
-        create_bucket(tokens)
+        create_bucket(s5, tokens)
     elif tokens[0] == 'create_folder':
-        create_folder(tokens)
+        create_folder(s5, tokens)
     elif tokens[0] == 'cwf':
         cwf(s5)
     elif tokens[0] == 'delete_bucket':
@@ -34,7 +35,7 @@ def attempt_command(s5, string):
     elif tokens[0] == 'lc_copy':
         lc_copy(s5, tokens)
     elif tokens[0] == 'list':
-        s3_list(tokens)
+        s3_list(s5, tokens)
     else:
         return False
     return True
@@ -68,11 +69,21 @@ def cl_copy(command_tokens):
     except:
          print('Unsuccessful copy', file=sys.stderr)   
 
-def create_bucket(command_tokens):
-    print('execute create_bucket')
+def create_bucket(s5, command_tokens):
+    try:
+        s5.create_bucket(command_tokens[1])
+    except IndexError:
+        print('usage: create_bucket bucket_name', file=sys.stderr)
+    except Exception as ex:
+        print("create_bucket error: ", ex, file=sys.stderr) 
 
-def create_folder(command_tokens):
-    print('execute create_folder')
+def create_folder(s5, command_tokens):
+    try:
+        s5.create_folder(command_tokens[1])
+    except IndexError:
+        print('usage: create_folder folder_name', file=sys.stderr)
+    except Exception as ex:
+        print("create_folder error: ", ex, file=sys.stderr) 
 
 def cwf(s5):
     if not s5.current_bucket:
@@ -84,7 +95,7 @@ def delete_bucket(command_tokens):
     print('execute delete_bucket')
 
 def exit():
-    print('execute exit')
+    print('Goodbye')
     sys.exit(0)
 
 def lc_copy(s5, command_tokens):
@@ -99,8 +110,11 @@ def lc_copy(s5, command_tokens):
     except:
          print('Unsuccessful copy', file=sys.stderr) 
 
-def s3_list(command_tokens):
-    print('execute list')
+def s3_list(s5, command_tokens):
+    try:
+        s5.list_current_contents()
+    except Exception as ex:
+         print('Couldn\'t list: ', ex, file=sys.stderr) 
     
     
 
