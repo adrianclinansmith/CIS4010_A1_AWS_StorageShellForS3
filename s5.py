@@ -15,9 +15,9 @@ def attempt_command(s5, string):
     if not tokens:
         return False 
     elif tokens[0] == 'ccopy':
-        ccopy(tokens)
+        ccopy(s5, tokens)
     elif tokens[0] == 'cdelete':
-        cdelete(tokens)
+        cdelete(s5, tokens)
     elif tokens[0] == 'ch_folder':
         ch_folder(s5, tokens)
     elif tokens[0] == 'cl_copy':
@@ -29,7 +29,7 @@ def attempt_command(s5, string):
     elif tokens[0] == 'cwf':
         cwf(s5)
     elif tokens[0] == 'delete_bucket':
-        delete_bucket(tokens)
+        delete_bucket(s5, tokens)
     elif tokens[0] == 'exit':
         exit()
     elif tokens[0] == 'lc_copy':
@@ -40,18 +40,26 @@ def attempt_command(s5, string):
         return False
     return True
 
-def ccopy(command_tokens):
-    print('execute ccopy')
+def ccopy(s5, command_tokens):
+    try:
+        s5.cloud_to_cloud_copy(command_tokens[1], command_tokens[2])
+    except IndexError:
+        print('usage: ccopy from_s3_path to_s3_path', file=sys.stderr)
+    except Exception as ex:
+        print(ex, file=sys.stderr)
 
-def cdelete(command_tokens):
-    print('execute cdelete')
+def cdelete(s5, command_tokens):
+    try:
+        s5.delete_file(command_tokens[1])
+    except IndexError:
+        print('usage: cdelete s3_path', file=sys.stderr)
+    except Exception as ex:
+        print(ex, file=sys.stderr)
 
 def ch_folder(s5, command_tokens):
-    first_arg = ''
-    if len(command_tokens) > 1:
-        first_arg = command_tokens[1]
+    arg1 = command_tokens[1] if len(command_tokens) > 1 else ''
     try:
-        s5.set_current_path(first_arg)
+        s5.set_current_path(arg1)
     except S5Exception as ex:
         print('s5 ex:', ex, file=sys.stderr)
     except Exception as ex:
@@ -66,8 +74,8 @@ def cl_copy(command_tokens):
         print(f'"{command_tokens[2]}" could not be opened', file=sys.stderr)
     except S5Exception as ex:
         print(ex, file=sys.stderr)  
-    except:
-         print('Unsuccessful copy', file=sys.stderr)   
+    except Exception as ex:
+         print(ex, file=sys.stderr)   
 
 def create_bucket(s5, command_tokens):
     try:
@@ -91,8 +99,13 @@ def cwf(s5):
     else:
         print(s5.current_bucket + ':' + s5.current_folder)
 
-def delete_bucket(command_tokens):
-    print('execute delete_bucket')
+def delete_bucket(s5, command_tokens):
+    try:
+        s5.delete_bucket(command_tokens[1])
+    except IndexError:
+        print('usage: cdelete s3_path', file=sys.stderr)
+    except Exception as ex:
+        print(ex, file=sys.stderr)
 
 def exit():
     print('Goodbye')
@@ -110,11 +123,12 @@ def lc_copy(s5, command_tokens):
     except:
          print('Unsuccessful copy', file=sys.stderr) 
 
-def s3_list(s5, command_tokens):
+def s3_list(s5, commands):
+    arg = commands[1] if len(commands) > 1 else ''
     try:
-        s5.list_current_contents()
+        s5.list_contents(arg)
     except Exception as ex:
-         print('Couldn\'t list: ', ex, file=sys.stderr) 
+         print(ex, file=sys.stderr) 
     
     
 

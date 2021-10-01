@@ -1,100 +1,142 @@
+from collections import namedtuple
 import os
 from s5_exception import S5Exception
 
 class S5:
 
+    ###########################################################################
     # Initializer
+    ###########################################################################
 
     def __init__(self, resource):
         self.resource = resource
         self.current_bucket = ''
         self.current_folder = '/'
 
+    ###########################################################################
     # Public methods
+    ###########################################################################
 
-    def cloud_to_local_copy(self, s3_path, to_local_file):
-        bucket_name, s3_file_name = self._resolve_path_name(s3_path)
-        s3_file_name = s3_file_name.lstrip('/')
-        if not self._bucket_has_file(bucket_name, s3_file_name):
-            e = f'No file/permission for "{s3_file_name}" in "{bucket_name}"'
+    def cloud_to_cloud_copy(self, from_s3_file, to_s3_file):
+        source_path = self._resolve_s3_path(from_s3_file, from_root=True)
+        new_path = self._resolve_s3_path(to_s3_file)
+        source = source_path.bucket + source_path.file
+        s3_object = self.resource.Object(new_path.bucket, new_path.file)
+        s3_object.copy_from(CopySource=source)
+
+    def cloud_to_local_copy(self, from_s3_file, to_local_file):
+        path = self._resolve_s3_path(from_s3_file)
+        if not self._bucket_has_file(path.bucket, path.file):
+            e = f'No file/permission for "{path.file}" in "{path.bucket}"'
             raise S5Exception(e)
         with open(to_local_file, 'wb') as fileobj:
-            self._client().download_fileobj(bucket_name, s3_file_name, fileobj)
+            self._client().download_fileobj(path.bucket, path.file, fileobj)
 
     def create_bucket(self, bucket_name):
         self._client().create_bucket(Bucket=bucket_name)
 
-    def create_folder(self, s3_path):
-        bucket_name, folder_name = self._resolve_path_name(s3_path, as_folder=True)
-        folder_name = folder_name.lstrip('/')
-        self._client().put_object(Bucket=bucket_name, Key=folder_name)
+    def create_folder(self, s3_folder):
+        path = self._resolve_s3_path(s3_folder, as_folder=True)
+        self._client().put_object(Bucket=path.bucket, Key=path.file)
 
-    def list_current_contents(self):
-        if not self.current_bucket:
+    def delete_bucket(self, bucket_name):
+        bucket_object = self._bucket_as_object(bucket_name)
+        if not bucket_object:
+            raise S5Exception(f'No bucket named "{bucket_name}"')
+        bucket_object.delete()
+
+    def delete_file(self, s3_file):
+        path = self._resolve_s3_path(s3_file)
+        file_name = path.file
+        if s3_file.endswith('/'):
+            file_name = file_name + '/'
+        if self._bucket_has_file(path.bucket, file_name):
+            self.resource.Object(path.bucket, file_name).delete()
+        else:
+            e = f'No file/permission for "{file_name}" in "{path.bucket}"'
+            raise S5Exception(e)
+
+    def list_contents(self, s3_path):
+        path = self._path_tuple(self.current_bucket, self.current_folder)
+        if s3_path:
+            path = self._resolve_s3_path(s3_path, as_folder=True)
+        if not path.bucket:
             for bucket_data in self._client().list_buckets()['Buckets']:
                 print(bucket_data['Name'])
             return
-        current_folder = self.current_folder.lstrip('/')
-        for object_data in self._bucket_objects():
-            key = object_data.key 
-            name = key[len(current_folder):]
-            in_or_below = key.startswith(current_folder) and key != current_folder
-            not_below = ('/' not in name) or (name.find('/') == len(name) - 1)
-            if (in_or_below and not_below):
-                    print(name)
+        for object in self._folder_contents(path.bucket, path.file):
+            print(object.key)
 
-    
-    def local_to_cloud_copy(self, local_file, to_s3_path):
-        bucket_name, s3_file_name = self._resolve_path_name(to_s3_path)
-        s3_file_name = s3_file_name.lstrip('/')
-        if self._bucket_has_file(bucket_name, s3_file_name):
-            e = f'"{s3_file_name}" already exists in "{bucket_name}"'
+    def local_to_cloud_copy(self, from_local_file, to_s3_file):
+        path = self._resolve_s3_path(to_s3_file)
+        if self._bucket_has_file(path.bucket, path.file):
+            e = f'"{path.file}" already exists in "{path.bucket}"'
             raise S5Exception(e)
-        with open(local_file, 'rb') as fileobj:
-            self._client().upload_fileobj(fileobj, bucket_name, s3_file_name)
+        with open(from_local_file, 'rb') as fileobj:
+            self._client().upload_fileobj(fileobj, path.bucket, path.file)
 
     def set_current_path(self, path_name):
         if not path_name or path_name == '/':
             self.current_bucket = ''
             self.current_folder = '/' 
             return
-        bucket_name, folder_name = self._resolve_path_name(path_name, as_folder=True)
-        if self._bucket_has_file(bucket_name, folder_name.lstrip('/')):
-            self.current_bucket = bucket_name
-            self.current_folder = folder_name
+        path = self._resolve_s3_path(path_name, from_root=True, as_folder=True)
+        if self._bucket_has_file(path.bucket, path.file.lstrip('/')):
+            self.current_bucket = path.bucket
+            self.current_folder = path.file
         else:
-            e = f'No folder/permission for "{folder_name}" in "{bucket_name}"'
+            e = f'No folder/permission for "{path.file}" in "{path.bucket}"'
             raise S5Exception(e)
 
+    ###########################################################################
     # Private methods
+    ###########################################################################
 
-    def _bucket_exists(self, bucket_name):
+    def _bucket_as_object(self, bucket_name):
         bucket_object = self.resource.Bucket(bucket_name)
         if bucket_object.creation_date is None:
-            return False
-        return True
+            return None
+        return bucket_object
 
     def _bucket_has_file(self, bucket_name, file_name):
-        if not self._bucket_exists(bucket_name):
+        bucket_object = self._bucket_as_object(bucket_name)
+        if not bucket_object:
             raise S5Exception(f'No bucket named "{bucket_name}"')
         elif not file_name or file_name == '/':
             return True
-        bucket_as_object = self.resource.Bucket(bucket_name)
-        for file_in_bucket in bucket_as_object.objects.all():
-            if (file_in_bucket.key == file_name):
+        for file_object in bucket_object.objects.all():
+            if (file_object.key == file_name):
                 return True
         return False
 
     def _client(self):
         return self.resource.meta.client
 
-    def _bucket_objects(self):
-        bucket_resource = self.resource.Bucket(self.current_bucket)
+    def _bucket_contents(self, bucket_name):
+        bucket_resource = self.resource.Bucket(bucket_name)
         return bucket_resource.objects.all()
 
-    def _resolve_path_name(self, path_name, *, as_folder=False):
+    def _folder_contents(self, bucket_name, folder_name):
+        contents = []
+        folder_name = folder_name.lstrip('/')
+        for object_data in self._bucket_contents(bucket_name):
+            key = object_data.key 
+            if not key.startswith(folder_name) or key == folder_name:
+                continue
+            name = key[len(folder_name):]
+            if ('/' not in name) or (name.find('/') == len(name) - 1):
+                contents.append(object_data)
+        return contents
+
+    def _path_tuple(self, bucket_name, file_name):
+        return namedtuple('Path', 'bucket file')(bucket_name, file_name)
+
+    def _resolve_s3_path(self, path_name, *,from_root=False, as_folder=False):
         bucket_name, file_name = '', ''
-        if ':' in path_name:
+        if path_name == '/':
+            bucket_name = ''
+            file_name = '/'
+        elif ':' in path_name:
             bucket_name = path_name.split(':')[0]
             file_name = '/' + path_name.split(':')[1].lstrip('/')
         else:
@@ -109,7 +151,9 @@ class S5:
                 file_name = self.current_folder + path_name
         file_name = os.path.normpath(file_name)
         if as_folder:
-            return (bucket_name, file_name.rstrip('/') + '/')    
-        return (bucket_name, file_name)
+            file_name = file_name.rstrip('/') + '/'
+        if not from_root:
+            file_name = file_name.lstrip('/')
+        return self._path_tuple(bucket_name, file_name)
         
 
